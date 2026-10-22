@@ -129,9 +129,46 @@ function renderMonthly(m){let e=db.expenses.filter(x=>x.date.startsWith(m)).redu
 function boarderReport(){let own=current.role==='boarder'?db.boarders.filter(x=>x.userId===current.id):db.boarders;if(!own.length){main.innerHTML='<div class="card">কোনো বোর্ডার প্রোফাইল পাওয়া যায়নি।</div>';return}let m=new Date().toISOString().slice(0,7);main.innerHTML=`<div class="page"><h2>${current.role==='boarder'?'আমার রিপোর্ট':'বোর্ডার রিপোর্ট'}</h2><div class="card form-grid">${current.role==='boarder'?`<input id="rb" type="hidden" value="${own[0].id}">`:`<div class="field"><label>বোর্ডার</label><select id="rb">${own.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>`}<div class="field"><label>মাস</label><input id="rrm" type="month" value="${m}"></div><div class="wide"><button class="btn primary" onclick="renderBR()">রিপোর্ট দেখুন</button></div></div><div id="br"></div></div>`;renderBR()}
 function renderBR(){let b=db.boarders.find(x=>x.id===+rb.value),m=rrm.value,c=calc(b.id,m), util=db.utilities.filter(x=>x.boarderId===b.id&&x.date.startsWith(m));let by=t=>util.filter(x=>x.type===t).reduce((a,x)=>a+Number(x.amount),0), totalUtil=util.reduce((a,x)=>a+Number(x.amount),0);br.innerHTML=`<div class="card" style="margin-top:16px"><div class="section-title"><h3>${esc(b.name)} — ${esc(b.seat)}</h3><button class="btn ghost" onclick="printBoarder(${b.id},'${m}')">YLC প্যাডে প্রিন্ট</button></div><table><tr><th>মিল সংখ্যা</th><td>${c.meals}</td></tr><tr><th>মিল চার্জ/রেট</th><td>${money(c.rate)}</td></tr><tr><th>মিলের মোট খরচ</th><td>${money(c.mealCost)}</td></tr><tr><th>মিল জমা</th><td>${money(c.dep)}</td></tr><tr><th>মিল বকেয়া</th><td>${money(c.due)}</td></tr><tr><th>সিট ভাড়া জমা</th><td>${money(by('Seat Rent'))}</td></tr><tr><th>কারেন্ট বিল জমা</th><td>${money(by('Current Bill'))}</td></tr><tr><th>Wi‑Fi বিল জমা</th><td>${money(by('WiFi Bill'))}</td></tr><tr><th>খালা বিল জমা</th><td>${money(by('Khala Bill'))}</td></tr><tr><th>মোট জমা (বিলসহ)</th><td>${money(c.dep+totalUtil)}</td></tr><tr class="amount-row"><th>সর্বমোট বকেয়া/টাকা (সিট ভাড়া + কারেন্ট বিল + Wi‑Fi বিল + খালা বিল + মিল বকেয়া)</th><td><b>${money(totalUtil+c.due)}</b></td></tr></table></div>`}
 function my(){boarderReport()}
-function settings(){if(current.role==='boarder'){main.innerHTML='<div class="card">Settings শুধুমাত্র Admin/Manager-এর জন্য।</div>';return}main.innerHTML=`<div class="page"><h2>সেটিংস</h2><div class="grid2"><div class="card"><h3>পাসওয়ার্ড পরিবর্তন</h3><div class="field"><label>নতুন পাসওয়ার্ড</label><input id="np" type="password"></div><button class="btn primary" onclick="changePass()">পরিবর্তন</button></div><div class="card"><h3>নতুন User (Local Record)</h3><div class="field"><label>নাম</label><input id="un"></div><div class="field"><label>Username</label><input id="uu"></div><div class="field"><label>Password</label><input id="up" type="password"></div><div class="field"><label>Role</label><select id="ur">${current.role==='admin'?'<option value="manager">Manager</option>':''}<option value="boarder">Boarder</option></select></div><div class="field"><label>Boarder profile (Boarder role হলে)</label><select id="ub"><option value="">—</option>${db.boarders.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div><button class="btn primary" onclick="addUser()">Local User Record তৈরি</button><p class="footer-note">Online Manager/Boarder login-এর জন্য Supabase Auth user + profiles record প্রয়োজন।</p></div></div><div class="card table-wrap" style="margin-top:16px"><table><thead><tr><th>নাম</th><th>Username</th><th>Role</th><th>Action</th></tr></thead><tbody>${db.users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${u.role}</td><td>${current.role==='admin'&&u.id!==current.id?`<button class="btn danger" onclick="del('users',${u.id})">Delete</button>`:'—'}</td></tr>`).join('')}</tbody></table></div></div>`}
-function changePass(){if(np.value.length<4)return toast('কমপক্ষে ৪ অক্ষর দিন');db.users.find(x=>x.id===current.id).password=np.value;save();toast('পাসওয়ার্ড পরিবর্তন হয়েছে')}
-function addUser(){if(db.users.some(x=>x.username===uu.value))return toast('Username আগে থেকেই আছে');let role=ur.value;if(current.role!=='admin'&&role==='manager')return;let u={id:id(),name:un.value,username:uu.value,password:up.value,role};if(!u.name||!u.username||!u.password)return toast('সব তথ্য দিন');db.users.push(u);if(role==='boarder'&&ub.value){let b=db.boarders.find(x=>x.id===+ub.value);if(b)b.userId=u.id}save();show('settings');toast('User তৈরি হয়েছে')}
+function settings(){
+ if(current.role==='boarder'){main.innerHTML='<div class="card">Settings শুধুমাত্র Admin/Manager-এর জন্য।</div>';return}
+ main.innerHTML=`<div class="page"><h2>সেটিংস</h2><div class="grid2">
+ <div class="card"><h3>পাসওয়ার্ড পরিবর্তন</h3><div class="field"><label>নতুন পাসওয়ার্ড</label><input id="np" type="password"></div><button class="btn primary" onclick="changePass()">পরিবর্তন</button></div>
+ <div class="card"><h3>Online Manager / Boarder User তৈরি</h3>
+ <div class="field"><label>নাম</label><input id="un"></div>
+ <div class="field"><label>User ID</label><input id="uu" autocomplete="off" placeholder="যেমন: manager01 / B001"></div>
+ <div class="field"><label>Password</label><input id="up" type="password" autocomplete="new-password"></div>
+ <div class="field"><label>Role</label><select id="ur" onchange="toggleBoarderUser()">${current.role==='admin'?'<option value="manager">Manager</option>':''}<option value="boarder">Boarder</option></select></div>
+ <div class="field" id="ubWrap"><label>Boarder profile (Boarder role হলে)</label><select id="ub"><option value="">— Boarder নির্বাচন করুন —</option>${db.boarders.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
+ <button class="btn primary" id="createOnlineBtn" onclick="addOnlineUser()">Online User তৈরি</button>
+ <p class="footer-note">এই User ID + Password দিয়ে Vercel সাইটে সরাসরি Login করা যাবে।</p></div></div>
+ <div class="card table-wrap" style="margin-top:16px"><table><thead><tr><th>নাম</th><th>User ID</th><th>Role</th><th>Action</th></tr></thead><tbody>${db.users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${u.role}</td><td>${current.role==='admin'&&u.id!==current.id?`<button class="btn danger" onclick="del('users',${u.id})">Delete Local</button>`:'—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+ toggleBoarderUser();
+}
+function toggleBoarderUser(){let w=document.getElementById('ubWrap');if(w&&document.getElementById('ur'))w.style.display=document.getElementById('ur').value==='boarder'?'grid':'none'}
+async function addOnlineUser(){
+ let name=un.value.trim(),username=uu.value.trim(),password=up.value,roleValue=ur.value,boarderId=ub?.value||'';
+ if(!name||!username||!password)return toast('নাম, User ID ও Password দিন');
+ if(password.length<6)return toast('Password কমপক্ষে ৬ অক্ষরের দিন');
+ if(!/^[A-Za-z0-9._-]{3,40}$/.test(username))return toast('User ID-তে শুধু A-Z, 0-9, . _ - ব্যবহার করুন');
+ if(roleValue==='manager'&&current.role!=='admin')return toast('শুধু Admin Manager তৈরি করতে পারবেন');
+ if(roleValue==='boarder'&&!boarderId)return toast('Boarder profile নির্বাচন করুন');
+ let btn=document.getElementById('createOnlineBtn'); if(btn){btn.disabled=true;btn.textContent='তৈরি হচ্ছে...'}
+ try{
+   let {data,error}=await sb.functions.invoke('create-hostel-user',{body:{name,username,password,role:roleValue,boarderId:boarderId||null}});
+   if(error)throw error;
+   if(!data?.ok)throw new Error(data?.error||'User তৈরি হয়নি');
+   let local={id:id(),authId:data.userId,name,username,password:'',role:roleValue};
+   db.users=db.users.filter(x=>String(x.username).toLowerCase()!==username.toLowerCase());
+   db.users.push(local);
+   if(roleValue==='boarder'&&boarderId){let b=db.boarders.find(x=>String(x.id)===String(boarderId));if(b)b.userId=data.userId}
+   save(); show('settings'); toast('Online User তৈরি হয়েছে');
+ }catch(e){
+   console.error(e);
+   let msg=e?.context?.body?.error||e?.message||'Online User তৈরি হয়নি';
+   toast('Create failed: '+msg);
+ }finally{if(btn){btn.disabled=false;btn.textContent='Online User তৈরি'}}
+}
+async function changePass(){if(np.value.length<6)return toast('কমপক্ষে ৬ অক্ষর দিন');let {error}=await sb.auth.updateUser({password:np.value});if(error)return toast('Password change failed: '+error.message);toast('পাসওয়ার্ড পরিবর্তন হয়েছে')}
 function backup(){main.innerHTML=`<div class="page"><h2>ডেটা ব্যাকআপ</h2><div class="card"><p>সব ডেটা JSON ফাইলে ব্যাকআপ নিন বা আগের ব্যাকআপ Restore করুন।</p><div class="actions"><button class="btn primary" onclick="downloadBackup()">Backup Download</button><label class="btn ghost">Restore JSON<input type="file" accept="application/json" style="display:none" onchange="restore(this.files[0])"></label><button class="btn ghost" onclick="window.print()">বর্তমান রিপোর্ট প্রিন্ট</button></div><p class="footer-note">এই সংস্করণে ডেটা এই ব্রাউজারের Local Storage-এ থাকে। নিয়মিত ব্যাকআপ রাখুন।</p></div></div>`}
 function downloadBackup(){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(db,null,2)],{type:'application/json'}));a.download='YLC_Backup_'+today()+'.json';a.click();URL.revokeObjectURL(a.href)} function restore(f){let r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result);save();toast('Restore সম্পন্ন');show('dashboard')}catch(e){toast('ফাইল সঠিক নয়')}};r.readAsText(f)}
 function del(k,i){if(current.role!=='admin')return toast('শুধু Admin ডিলিট করতে পারবেন');if(confirm('ডিলিট করবেন?')){db[k]=db[k].filter(x=>x.id!==i);save();show(page)}}
