@@ -21,15 +21,57 @@ const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let cloudReady=false, cloudSaving=false;
 const defaultDB={users:[{id:1,username:'admin',password:'admin123',role:'admin',name:'Administrator'}],boarders:[],notices:[{id:1,text:'YLC BOYS HOSTEL ব্যবস্থাপনা সিস্টেমে স্বাগতম।',date:new Date().toISOString().slice(0,10)}],meals:[],expenses:[],payments:[],utilities:[],settings:{seatRent:0,wifiBill:0,currentBill:0,khalaBill:0}};
 let db=load(), current=null, page='dashboard';
-function load(){try{return JSON.parse(localStorage.getItem(DBKEY))||structuredClone(defaultDB)}catch(e){return structuredClone(defaultDB)}}
-async function cloudLoad(){let {data,error}=await sb.from('app_state').select('payload').eq('id',1).maybeSingle();if(error){toast('Cloud load: '+error.message);return}if(data?.payload){db=data.payload;localStorage.setItem(DBKEY,JSON.stringify(db))}cloudReady=true}
+
+function normalizeDB(raw){
+  const base=structuredClone(defaultDB);
+  const x=(raw && typeof raw==='object') ? raw : {};
+  return {
+    ...base,
+    ...x,
+    users:Array.isArray(x.users)?x.users:base.users,
+    boarders:Array.isArray(x.boarders)?x.boarders:[],
+    notices:Array.isArray(x.notices)?x.notices:base.notices,
+    meals:Array.isArray(x.meals)?x.meals:[],
+    expenses:Array.isArray(x.expenses)?x.expenses:[],
+    payments:Array.isArray(x.payments)?x.payments:[],
+    utilities:Array.isArray(x.utilities)?x.utilities:[],
+    settings:{...base.settings,...(x.settings&&typeof x.settings==='object'?x.settings:{})}
+  };
+}
+function load(){
+  try{return normalizeDB(JSON.parse(localStorage.getItem(DBKEY)))}
+  catch(e){return normalizeDB(null)}
+}
+async function cloudLoad(){
+  let {data,error}=await sb.from('app_state').select('payload').eq('id',1).maybeSingle();
+  if(error){toast('Cloud load: '+error.message);db=normalizeDB(db);cloudReady=true;return}
+  if(data?.payload){
+    db=normalizeDB(data.payload);
+    localStorage.setItem(DBKEY,JSON.stringify(db));
+  }else{
+    db=normalizeDB(db);
+  }
+  cloudReady=true;
+}
 async function cloudSave(){if(!cloudReady||cloudSaving||!current||current.role==='boarder')return;cloudSaving=true;let {error}=await sb.from('app_state').upsert({id:1,payload:db,updated_at:new Date().toISOString()});cloudSaving=false;if(error)console.error(error)}
 function save(){localStorage.setItem(DBKEY,JSON.stringify(db));cloudSave()} function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))} function money(n){return '৳ '+Number(n||0).toLocaleString('en-BD',{maximumFractionDigits:2})} function id(){return Date.now()+Math.floor(Math.random()*999)} function today(){return new Date().toISOString().slice(0,10)} function toast(s){let x=document.createElement('div');x.className='toast';x.textContent=s;document.body.appendChild(x);setTimeout(()=>x.remove(),2200)}
 async function login(){let email=loginUser.value.trim(),password=loginPass.value;if(!email||!password)return toast('Email ও Password দিন');let {data,error}=await sb.auth.signInWithPassword({email,password});if(error)return toast('Login failed: '+error.message);let {data:pf,error:pe}=await sb.from('profiles').select('id,username,full_name,role').eq('id',data.user.id).single();if(pe||!pf){await sb.auth.signOut();return toast('Profile/role পাওয়া যায়নি। bootstrap_admin.sql Run করুন।')}current={id:pf.id,username:pf.username,name:pf.full_name,role:pf.role};if(current.role!=='boarder')await cloudLoad();document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');renderNav();show('dashboard')}
 async function logout(){await sb.auth.signOut();current=null;cloudReady=false;document.getElementById('app').classList.add('hidden');document.getElementById('login').classList.remove('hidden')}
 const menuAdmin=[['dashboard','ড্যাশবোর্ড'],['boarders','বোর্ডার ব্যবস্থাপনা'],['meals','মিল এন্ট্রি'],['expenses','বাজার / খরচ'],['payments','মিলের জমা / পেমেন্ট'],['utilities','সিট ভাড়া / বিল'],['reports','মাসিক রিপোর্ট'],['boarderReport','বোর্ডার রিপোর্ট'],['settings','সেটিংস'],['backup','ডেটা ব্যাকআপ']]; const menuBoarder=[['dashboard','ড্যাশবোর্ড'],['my','আমার হিসাব'],['boarderReport','আমার রিপোর্ট']];
 function renderNav(){who.textContent=current.name;role.textContent=current.role.toUpperCase();nav.innerHTML=(current.role==='boarder'?menuBoarder:menuAdmin).map(([k,v])=>`<button data-p="${k}" onclick="show('${k}')">${v}</button>`).join('')}
-function show(p){page=p;document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===p));let f={dashboard,boarders,meals,expenses,payments,utilities,reports,boarderReport,settings,backup,my};main.innerHTML='';f[p]?.()}
+function show(p){
+  page=p;
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===p));
+  let f={dashboard,boarders,meals,expenses,payments,utilities,reports,boarderReport,settings,backup,my};
+  main.innerHTML='';
+  try{
+    if(typeof f[p]==='function') f[p]();
+    else main.innerHTML='<div class="card">Page পাওয়া যায়নি।</div>';
+  }catch(err){
+    console.error(err);
+    main.innerHTML='<div class="card"><h3>Page load error</h3><p>'+esc(err?.message||err)+'</p></div>';
+  }
+}
 function dashboard(){let b=current.role==='boarder'?db.boarders.filter(x=>x.userId===current.id):db.boarders;main.innerHTML=`<div class="page"><h2>ড্যাশবোর্ড</h2><div class="cards"><div class="card stat"><b>${b.length}</b><span>${current.role==='boarder'?'প্রোফাইল':'মোট বোর্ডার'}</span></div><div class="card stat"><b>${db.meals.reduce((a,x)=>a+Number(x.count),0)}</b><span>মোট মিল</span></div><div class="card stat"><b>${money(db.expenses.reduce((a,x)=>a+Number(x.amount),0))}</b><span>মোট বাজার/খরচ</span></div><div class="card stat"><b>${money(db.payments.reduce((a,x)=>a+Number(x.amount),0))}</b><span>মিল জমা</span></div><div class="card stat"><b>${money(db.utilities.filter(x=>x.type==='Seat Rent').reduce((a,x)=>a+Number(x.amount),0))}</b><span>মোট সিট ভাড়া</span></div><div class="card stat"><b>${money(db.utilities.filter(x=>x.type==='Current Bill').reduce((a,x)=>a+Number(x.amount),0))}</b><span>মোট কারেন্ট বিল</span></div><div class="card stat"><b>${money(db.utilities.filter(x=>x.type==='WiFi Bill').reduce((a,x)=>a+Number(x.amount),0))}</b><span>মোট Wi‑Fi বিল</span></div><div class="card stat"><b>${money(db.utilities.filter(x=>x.type==='Khala Bill').reduce((a,x)=>a+Number(x.amount),0))}</b><span>মোট খালা বিল</span></div></div><div class="grid2"><div class="card"><div class="section-title"><h3>নোটিশ</h3>${current.role!=='boarder'?'<button class="btn orange" onclick="addNotice()">+ নোটিশ</button>':''}</div>${db.notices.slice().reverse().map(n=>`<div class="notice"><b>${esc(n.date)}</b><br>${esc(n.text)} ${current?.role==='admin'?`<button class="btn danger" onclick="del('notices',${n.id})">Delete</button>`:''}</div>`).join('')||'কোনো নোটিশ নেই'}</div><div class="card"><h3>আজকের সারাংশ</h3><p>আজকের মিল: <b>${db.meals.filter(x=>x.date===today()).reduce((a,x)=>a+Number(x.count),0)}</b></p><p>আজকের খরচ: <b>${money(db.expenses.filter(x=>x.date===today()).reduce((a,x)=>a+Number(x.amount),0))}</b></p><p>আজকের জমা: <b>${money(db.payments.filter(x=>x.date===today()).reduce((a,x)=>a+Number(x.amount),0))}</b></p></div></div></div>`}
 function addNotice(){let text=prompt('নোটিশ লিখুন');if(text){db.notices.push({id:id(),text,date:today()});save();dashboard()}}
 function boarders(){if(current.role==='boarder')return my();main.innerHTML=`<div class="page"><div class="section-title"><h2>বোর্ডার ব্যবস্থাপনা</h2><button class="btn orange" onclick="boarderForm()">+ নতুন বোর্ডার</button></div><div class="card table-wrap"><table><thead><tr><th>ID</th><th>নাম</th><th>মোবাইল</th><th>সিট</th><th>ভর্তি</th><th>Action</th></tr></thead><tbody>${db.boarders.map(x=>`<tr><td>${x.id}</td><td>${esc(x.name)}</td><td>${esc(x.phone)}</td><td>${esc(x.seat)}</td><td>${esc(x.joinDate)}</td><td class="actions"><button class="btn ghost" onclick="boarderForm(${x.id})">Edit</button>${current.role==='admin'?`<button class="btn danger" onclick="del('boarders',${x.id})">Delete</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>`}
