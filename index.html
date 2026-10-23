@@ -215,7 +215,7 @@ async function refreshLiveData(forceRender=false){
       if(!error&&data?.payload){
         db=normalizeDB(data.payload);
         localStorage.setItem(DBKEY,JSON.stringify(db));
-        if(forceRender&&['dashboard','reports','boarderReport'].includes(page)) show(page||'dashboard');
+        if(forceRender&&['dashboard','reports'].includes(page)) show(page||'dashboard'); // Admin/Manager Boarder Report intentionally does not auto-render
       }
     }
   }catch(e){ console.debug('Auto refresh skipped',e); }
