@@ -194,8 +194,53 @@ async function login(){
   document.getElementById('app').classList.remove('hidden');
   renderNav();
   show('dashboard');
+  startAutoRefresh();
 }
-async function logout(){await sb.auth.signOut();current=null;cloudReady=false;document.getElementById('app').classList.add('hidden');document.getElementById('login').classList.remove('hidden')}
+let autoRefreshTimer=null;
+let realtimeChannel=null;
+let autoRefreshBusy=false;
+
+async function refreshLiveData(forceRender=false){
+  if(!current||autoRefreshBusy||document.hidden)return;
+  autoRefreshBusy=true;
+  try{
+    if(current.role==='boarder'){
+      const {data,error}=await sb.functions.invoke('get-boarder-data');
+      if(!error&&data?.ok){
+        db=normalizeDB(data.payload||{});
+        if(forceRender||['dashboard','my','boarderReport'].includes(page)) show(page||'dashboard');
+      }
+    }else{
+      const {data,error}=await sb.from('app_state').select('payload').eq('id',1).maybeSingle();
+      if(!error&&data?.payload){
+        db=normalizeDB(data.payload);
+        localStorage.setItem(DBKEY,JSON.stringify(db));
+        if(forceRender&&['dashboard','reports','boarderReport'].includes(page)) show(page||'dashboard');
+      }
+    }
+  }catch(e){ console.debug('Auto refresh skipped',e); }
+  finally{ autoRefreshBusy=false; }
+}
+
+function startAutoRefresh(){
+  stopAutoRefresh();
+  // Polling keeps Boarder data fresh even when Realtime/RLS does not expose app_state.
+  autoRefreshTimer=setInterval(()=>refreshLiveData(true),5000);
+  // Realtime gives an immediate refresh when app_state changes where subscription is permitted.
+  try{
+    realtimeChannel=sb.channel('ylc-app-state-live')
+      .on('postgres_changes',{event:'*',schema:'public',table:'app_state'},()=>refreshLiveData(true))
+      .subscribe();
+  }catch(e){ console.debug('Realtime unavailable; polling remains active',e); }
+}
+function stopAutoRefresh(){
+  if(autoRefreshTimer){clearInterval(autoRefreshTimer);autoRefreshTimer=null;}
+  if(realtimeChannel){try{sb.removeChannel(realtimeChannel)}catch(e){} realtimeChannel=null;}
+}
+window.addEventListener('focus',()=>refreshLiveData(true));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLiveData(true)});
+
+async function logout(){stopAutoRefresh();await sb.auth.signOut();current=null;cloudReady=false;document.getElementById('app').classList.add('hidden');document.getElementById('login').classList.remove('hidden')}
 const menuAdmin=[['dashboard','ড্যাশবোর্ড'],['boarders','বোর্ডার ব্যবস্থাপনা'],['meals','মিল এন্ট্রি'],['expenses','বাজার / খরচ'],['payments','মিলের জমা / পেমেন্ট'],['utilities','সিট ভাড়া / বিল'],['reports','মাসিক রিপোর্ট'],['boarderReport','বোর্ডার রিপোর্ট'],['settings','সেটিংস'],['backup','ডেটা ব্যাকআপ']]; const menuBoarder=[['dashboard','ড্যাশবোর্ড'],['my','আমার হিসাব'],['boarderReport','আমার রিপোর্ট']];
 function renderNav(){who.textContent=current.name;role.textContent=current.role.toUpperCase();nav.innerHTML=(current.role==='boarder'?menuBoarder:menuAdmin).map(([k,v])=>`<button data-p="${k}" onclick="show('${k}')">${v}</button>`).join('')}
 function show(p){
