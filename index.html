@@ -84,14 +84,17 @@ function load(){
   catch(e){return normalizeDB(null)}
 }
 async function cloudLoad(){
+  if(current?.role==='boarder'){
+    let {data,error}=await sb.functions.invoke('get-boarder-data');
+    if(error||!data?.ok){toast('Boarder data load failed');db=normalizeDB(null);cloudReady=true;return}
+    db=normalizeDB(data.payload||{});
+    cloudReady=true;
+    return;
+  }
   let {data,error}=await sb.from('app_state').select('payload').eq('id',1).maybeSingle();
   if(error){toast('Cloud load: '+error.message);db=normalizeDB(db);cloudReady=true;return}
-  if(data?.payload){
-    db=normalizeDB(data.payload);
-    localStorage.setItem(DBKEY,JSON.stringify(db));
-  }else{
-    db=normalizeDB(db);
-  }
+  if(data?.payload){db=normalizeDB(data.payload);localStorage.setItem(DBKEY,JSON.stringify(db));}
+  else db=normalizeDB(db);
   cloudReady=true;
 }
 async function cloudSave(){if(!cloudReady||cloudSaving||!current||current.role==='boarder')return;cloudSaving=true;let {error}=await sb.from('app_state').upsert({id:1,payload:db,updated_at:new Date().toISOString()});cloudSaving=false;if(error)console.error(error)}
@@ -183,8 +186,22 @@ function settings(){
  <div class="field" id="ubWrap"><label>Boarder profile (Boarder role হলে)</label><select id="ub"><option value="">— Boarder নির্বাচন করুন —</option>${db.boarders.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
  <button class="btn primary" id="createOnlineBtn" onclick="addOnlineUser()">Online User তৈরি</button>
  <p class="footer-note">এই User ID + Password দিয়ে Vercel সাইটে সরাসরি Login করা যাবে।</p></div></div>
- <div class="card table-wrap" style="margin-top:16px"><table><thead><tr><th>নাম</th><th>User ID</th><th>Role</th><th>Action</th></tr></thead><tbody>${db.users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${u.role}</td><td>${current.role==='admin'&&u.id!==current.id?`<button class="btn danger" onclick="del('users',${u.id})">Delete Local</button>`:'—'}</td></tr>`).join('')}</tbody></table></div></div>`;
- toggleBoarderUser();
+ <div class="card table-wrap" style="margin-top:16px"><h3>Online User List</h3><div id="onlineUsersBox">Loading...</div></div></div>`;
+ toggleBoarderUser(); loadOnlineUsers();
+}
+async function loadOnlineUsers(){
+ let box=document.getElementById('onlineUsersBox'); if(!box)return;
+ let {data,error}=await sb.functions.invoke('manage-hostel-users',{body:{action:'list'}});
+ if(error||!data?.ok){box.innerHTML='<p>Online User List load failed.</p>';return}
+ let rows=(data.users||[]).map(u=>`<tr><td>${esc(u.full_name||'')}</td><td>${esc(u.username||'')}</td><td>${esc(u.role||'')}</td><td>${u.role==='admin'?'—':(current.role==='admin'?`<button class="btn danger" onclick="deleteOnlineUser('${u.id}','${esc(u.username||'')}')">Delete User</button>`:'—')}</td></tr>`).join('');
+ box.innerHTML=`<table><thead><tr><th>নাম</th><th>User ID</th><th>Role</th><th>Action</th></tr></thead><tbody>${rows||'<tr><td colspan="4">কোনো Online User নেই</td></tr>'}</tbody></table>`;
+}
+async function deleteOnlineUser(uid,username){
+ if(current.role!=='admin')return toast('শুধু Admin User delete করতে পারবেন');
+ if(!confirm(username+' User delete করবেন? এরপর এই User আর Login করতে পারবে না।'))return;
+ let {data,error}=await sb.functions.invoke('manage-hostel-users',{body:{action:'delete',userId:uid}});
+ if(error||!data?.ok)return toast('Delete failed: '+(data?.error||error?.message||'Unknown error'));
+ toast('Online User delete হয়েছে'); loadOnlineUsers();
 }
 function toggleBoarderUser(){let w=document.getElementById('ubWrap');if(w&&document.getElementById('ur'))w.style.display=document.getElementById('ur').value==='boarder'?'grid':'none'}
 async function addOnlineUser(){
@@ -199,12 +216,7 @@ async function addOnlineUser(){
    let {data,error}=await sb.functions.invoke('create-hostel-user',{body:{name,username,password,role:roleValue,boarderId:boarderId||null}});
    if(error)throw error;
    if(!data?.ok)throw new Error(data?.error||'User তৈরি হয়নি');
-   let newAuthId=data?.user?.id||data?.userId||'';
-   let local={id:id(),authId:newAuthId,name,username,password:'',role:roleValue};
-   db.users=db.users.filter(x=>String(x.username).toLowerCase()!==username.toLowerCase());
-   db.users.push(local);
-   if(roleValue==='boarder'&&boarderId){let b=db.boarders.find(x=>String(x.id)===String(boarderId));if(b)b.userId=newAuthId}
-   save(); show('settings'); toast('Online User তৈরি হয়েছে');
+   show('settings'); toast('Online User তৈরি হয়েছে');
  }catch(e){
    console.error(e);
    let msg=e?.context?.body?.error||e?.message||'Online User তৈরি হয়নি';
