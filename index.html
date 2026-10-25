@@ -208,8 +208,7 @@ async function refreshLiveData(forceRender=false){
       const {data,error}=await sb.functions.invoke('get-boarder-data');
       if(!error&&data?.ok){
         db=normalizeDB(data.payload||{});
-        // Boarder Report/My Report auto-render OFF: data may sync in background, but report changes only when user presses "রিপোর্ট দেখুন".
-        if(forceRender && page==='dashboard') show(page||'dashboard');
+        if(forceRender||['dashboard','my','boarderReport'].includes(page)) show(page||'dashboard');
       }
     }else{
       const {data,error}=await sb.from('app_state').select('payload').eq('id',1).maybeSingle();
